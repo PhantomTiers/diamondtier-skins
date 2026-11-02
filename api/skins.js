@@ -6,7 +6,7 @@ const timeout = (ms) => AbortSignal.timeout(ms);
 async function accountId(name) {
   for (const u of ["https://api.mojang.com/users/profiles/minecraft/", "https://api.minecraftservices.com/minecraft/profile/lookup/name/"]) {
     try {
-      const r = await fetch(u + encodeURIComponent(name), { signal: timeout(4000) });
+      const r = await fetch(u + encodeURIComponent(name), { signal: timeout(5000) });
       if (r.status === 404 || r.status === 204) return { none: true };
       if (r.ok) { const j = await r.json(); if (j && j.id) return { id: j.id, name: j.name }; }
     } catch (e) {}
@@ -19,7 +19,12 @@ async function skin(name) {
   const prof = await accountId(name);
   if (!prof) return { error: "lookup", why: "no account id" };
   if (prof.none) return { none: true, src: "mojang" };
-  const s = await fetch("https://sessionserver.mojang.com/session/minecraft/profile/" + prof.id + "?unsigned=true", { signal: timeout(4000) }).catch(() => null);
+  // ask Mojang's skin server; if it is slow or busy, wait a moment and try once more
+  let s = null;
+  for (let attempt = 0; attempt < 2 && !(s && s.ok); attempt++) {
+    if (attempt) await new Promise((r) => setTimeout(r, 400));
+    s = await fetch("https://sessionserver.mojang.com/session/minecraft/profile/" + prof.id + "?unsigned=true", { signal: timeout(6000) }).catch(() => null);
+  }
   if (!s || !s.ok) return { error: "lookup", why: "session " + (s ? s.status : "timeout") };
   const j = await s.json();
   const prop = (j.properties || []).find((p) => p.name === "textures");
